@@ -4,12 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>تحضير الطلاب</title>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
     body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #fff; margin: 0; padding: 12px; text-align: center; }
     h3 { margin: 6px 0; color: #38bdf8; font-size: 18px; }
-    #reader { width: 100%; border-radius: 12px; overflow: hidden; background: #000; margin-bottom: 10px; border: 2px solid #334155; }
+    #reader { width: 100%; min-height: 250px; border-radius: 12px; overflow: hidden; background: #000; margin-bottom: 10px; border: 2px solid #334155; }
     .counter-box { background: #1e293b; padding: 10px; border-radius: 8px; font-size: 16px; margin-bottom: 10px; font-weight: bold; border: 1px solid #475569; }
     .manual-box { display: flex; gap: 8px; margin-bottom: 12px; }
     .manual-box input { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #475569; background: #1e293b; color: #fff; font-size: 15px; text-align: center; }
@@ -21,7 +19,7 @@
 <body>
 
   <h3>📷 ماسح حضور الطلاب السريع</h3>
-  <div id="status-msg">وجّه الكاميرا نحو باركود البطاقة أو الجوال</div>
+  <div id="status-msg">جارٍ تهيئة الكاميرا...</div>
   
   <div id="reader"></div>
 
@@ -36,14 +34,21 @@
 
   <button id="submit-btn" onclick="finishAndSubmit()">✅ إنهاء واعتماد الحضور</button>
 
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+
   <script>
-    const tg = window.Telegram.WebApp;
-    tg.expand();
+    const tg = window.Telegram ? window.Telegram.WebApp : null;
+    if (tg) tg.expand();
 
     const scannedStudents = new Set();
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    let audioCtx;
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch(e) {}
 
     function playBeep() {
+      if (!audioCtx) return;
       try {
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
@@ -80,31 +85,45 @@
       }
     }
 
-    const html5QrCode = new Html5Qrcode("reader");
-    html5QrCode.start(
-      { facingMode: "environment" },
-      {
-        fps: 20,
-        qrbox: { width: 280, height: 130 },
-        formatsToSupport: [
-          Html5QrcodeSupportedFormats.CODE_128,
-          Html5QrcodeSupportedFormats.CODE_39,
-          Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.QR_CODE
-        ]
-      },
-      (decodedText) => { recordStudent(decodedText, "باركود"); },
-      (errorMessage) => {}
-    ).catch(err => {
-      document.getElementById("status-msg").innerText = "تعذر تشغيل الكاميرا، يرجى منح الإذن.";
-    });
+    function startCamera() {
+      if (typeof Html5Qrcode === "undefined") {
+        document.getElementById("status-msg").innerText = "تعذر تحميل مكتبة الكاميرا، تحقق من الاتصال.";
+        return;
+      }
+      const html5QrCode = new Html5Qrcode("reader");
+      html5QrCode.start(
+        { facingMode: "environment" },
+        {
+          fps: 20,
+          qrbox: { width: 280, height: 130 },
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.QR_CODE
+          ]
+        },
+        (decodedText) => { recordStudent(decodedText, "باركود"); },
+        (errorMessage) => {}
+      ).then(() => {
+        document.getElementById("status-msg").innerText = "وجه الكاميرا نحو باركود البطاقة أو الجوال";
+      }).catch(err => {
+        document.getElementById("status-msg").innerText = "يرجى السماح بصلاحية الكاميرا في المتصفح.";
+      });
+    }
+
+    window.onload = startCamera;
 
     function finishAndSubmit() {
       if (scannedStudents.size === 0) {
         alert("لم يتم مسح أي طالب بعد!");
         return;
       }
-      tg.sendData(JSON.stringify(Array.from(scannedStudents)));
+      if (tg) {
+        tg.sendData(JSON.stringify(Array.from(scannedStudents)));
+      } else {
+        alert("تم تحضير الطلاب: " + Array.from(scannedStudents).join(", "));
+      }
     }
   </script>
 </body>
