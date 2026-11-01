@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>تحضير الطلاب</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #fff; margin: 0; padding: 12px; text-align: center; }
+    h3 { margin: 6px 0; color: #38bdf8; font-size: 18px; }
+    #reader { width: 100%; border-radius: 12px; overflow: hidden; background: #000; margin-bottom: 10px; border: 2px solid #334155; }
+    .counter-box { background: #1e293b; padding: 10px; border-radius: 8px; font-size: 16px; margin-bottom: 10px; font-weight: bold; border: 1px solid #475569; }
+    .manual-box { display: flex; gap: 8px; margin-bottom: 12px; }
+    .manual-box input { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #475569; background: #1e293b; color: #fff; font-size: 15px; text-align: center; }
+    .manual-box button { background: #0284c7; border: none; color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+    #submit-btn { background: #22c55e; border: none; color: #fff; width: 100%; padding: 14px; font-size: 17px; font-weight: bold; border-radius: 10px; cursor: pointer; }
+    #status-msg { font-size: 13px; height: 20px; margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+
+  <h3>📷 ماسح حضور الطلاب السريع</h3>
+  <div id="status-msg">وجّه الكاميرا نحو باركود البطاقة أو الجوال</div>
+  
+  <div id="reader"></div>
+
+  <div class="counter-box">
+    عدد المحضرين: <span id="count" style="color:#22c55e;">0</span> طالب
+  </div>
+
+  <div class="manual-box">
+    <input type="number" id="manual-id" placeholder="طالب نسي بطاقته؟ اكتب الرقم هنا">
+    <button onclick="addManual()">➕ إضافة</button>
+  </div>
+
+  <button id="submit-btn" onclick="finishAndSubmit()">✅ إنهاء واعتماد الحضور</button>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.expand();
+
+    const scannedStudents = new Set();
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    function playBeep() {
+      try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.frequency.value = 950;
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.08);
+        if (navigator.vibrate) navigator.vibrate(80);
+      } catch (e) {}
+    }
+
+    function recordStudent(academicId, type) {
+      if (!academicId || academicId.length < 4) return;
+      
+      if (scannedStudents.has(academicId)) {
+        document.getElementById("status-msg").innerHTML = `<span style="color:#ef4444;">⚠️ الرقم (${academicId}) مسجل مسبقاً!</span>`;
+        return;
+      }
+
+      scannedStudents.add(academicId);
+      playBeep();
+      document.getElementById("count").innerText = scannedStudents.size;
+      document.getElementById("status-msg").innerHTML = `<span style="color:#22c55e;">✅ تم تسجيل: ${academicId} (${type})</span>`;
+    }
+
+    function addManual() {
+      const input = document.getElementById("manual-id");
+      const val = input.value.trim();
+      if (val) {
+        recordStudent(val, "يدوي");
+        input.value = "";
+      }
+    }
+
+    const html5QrCode = new Html5Qrcode("reader");
+    html5QrCode.start(
+      { facingMode: "environment" },
+      {
+        fps: 20,
+        qrbox: { width: 280, height: 130 },
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.QR_CODE
+        ]
+      },
+      (decodedText) => { recordStudent(decodedText, "باركود"); },
+      (errorMessage) => {}
+    ).catch(err => {
+      document.getElementById("status-msg").innerText = "تعذر تشغيل الكاميرا، يرجى منح الإذن.";
+    });
+
+    function finishAndSubmit() {
+      if (scannedStudents.size === 0) {
+        alert("لم يتم مسح أي طالب بعد!");
+        return;
+      }
+      tg.sendData(JSON.stringify(Array.from(scannedStudents)));
+    }
+  </script>
+</body>
+</html>
