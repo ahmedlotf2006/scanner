@@ -3,9 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>ماسح الحضور الأكاديمي</title>
+  <title>ماسح الحضور الذكي</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+  <!-- محرك Quagga2 المخصص لباركود البطائق على أجهزة الآيفون -->
+  <script src="https://unpkg.com/@ericblade/quagga2@1.8.4/dist/quagga.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { background-color: #0f172a; padding: 10px; text-align: center; color: #fff; }
@@ -15,12 +16,15 @@
       position: relative; width: 100%; height: 260px; border-radius: 12px;
       overflow: hidden; background: #000; margin-bottom: 12px;
     }
-    video { width: 100%; height: 100%; object-fit: cover; }
+    .viewport video, .viewport canvas {
+      width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0;
+    }
+    .viewport canvas.drawingBuffer { display: none !important; }
     
     .scan-guide {
       position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
       width: 90%; height: 45%; border: 2.5px solid #22c55e; border-radius: 10px;
-      box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.45); pointer-events: none;
+      box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.45); pointer-events: none; z-index: 2;
     }
     .laser {
       position: absolute; width: 100%; height: 2.5px; background: #22c55e;
@@ -70,13 +74,11 @@
 <div class="container">
   <div id="toast"></div>
 
-  <!-- شاشة الكاميرا -->
   <div class="viewport">
-    <video id="video" playsinline webkit-playsinline muted autoplay></video>
+    <video id="androidVideo" playsinline webkit-playsinline muted autoplay></video>
     <div class="scan-guide"><div class="laser"></div></div>
   </div>
 
-  <!-- إدخال يدوي مساعد -->
   <div class="manual-box">
     <input type="text" id="manualInput" placeholder="أدخل الرقم الأكاديمي يدوياً..." inputmode="numeric">
     <button class="btn-add" onclick="addManualStudent()">➕ إضافة</button>
@@ -182,24 +184,26 @@
     updateUI();
   }
 
-  async function startScanner() {
-    const video = document.getElementById("video");
+  // ==========================================
+  // تشغيل المحرك المزدوج (Android + iPhone)
+  // ==========================================
+  async function initAttendanceScanner() {
+    // 1. نظام أندرويد (المحرك العتادي الشغال حالياً بدون أي تغيير)
+    if ('BarcodeDetector' in window) {
+      const video = document.getElementById("androidVideo");
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+          audio: false
+        });
+        video.srcObject = stream;
+        await video.play();
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
-        audio: false
-      });
-      video.srcObject = stream;
-      await video.play();
-
-      // 1. نظام أندرويد (يعمل بمحرك النظام العتادي كما هو)
-      if ('BarcodeDetector' in window) {
         const detector = new BarcodeDetector({
           formats: ['code_128', 'code_39', 'ean_13', 'qr_code']
         });
 
-        async function detectLoop() {
+        async function androidLoop() {
           if (!isCooldown && video.readyState >= 2) {
             try {
               const barcodes = await detector.detect(video);
@@ -210,47 +214,63 @@
               }
             } catch(e){}
           }
-          requestAnimationFrame(detectLoop);
+          requestAnimationFrame(androidLoop);
         }
-        detectLoop();
+        androidLoop();
+      } catch (err) {
+        document.querySelector(".viewport").innerHTML = 
+          `<div style="color:#ef4444; padding:40px; font-weight:bold;">يرجى تفعيل صلاحية الكاميرا.</div>`;
+      }
+      return;
+    }
+
+    // 2. نظام آيفون (Quagga2 المتخصص في خطوط الباركود 1D)
+    const androidVideo = document.getElementById("androidVideo");
+    if (androidVideo) androidVideo.remove(); // إزالة الفيديو الافتراضي ليعمل مشغل آيفون بدقة
+
+    if (typeof Quagga === "undefined") {
+      document.querySelector(".viewport").innerHTML = 
+        `<div style="color:#ef4444; padding:40px; font-weight:bold;">تعذر تحميل محرك المسح، تأكد من اتصال الإنترنت.</div>`;
+      return;
+    }
+
+    Quagga.init({
+      inputStream: {
+        name: "Live",
+        type: "LiveStream",
+        target: document.querySelector('.viewport'),
+        constraints: {
+          facingMode: "environment"
+        }
+      },
+      numOfWorkers: 0, // تشغيل متزامن لمنع الحظر الأمني في Safari
+      locate: true,
+      locator: {
+        patchSize: "medium",
+        halfSample: true
+      },
+      decoder: {
+        readers: [
+          "code_128_reader",
+          "code_39_reader"
+        ]
+      }
+    }, function(err) {
+      if (err) {
+        document.querySelector(".viewport").innerHTML = 
+          `<div style="color:#ef4444; padding:40px; font-weight:bold;">يرجى منح إذن الكاميرا لتطبيق تيليجرام في إعدادات الآيفون.</div>`;
         return;
       }
+      Quagga.start();
+    });
 
-      // 2. نظام آيفون (تصحيح حلقة التكرار المستمر عبر ZXing)
-      const hints = new Map();
-      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
-        ZXing.BarcodeFormat.CODE_128,
-        ZXing.BarcodeFormat.CODE_39,
-        ZXing.BarcodeFormat.QR_CODE
-      ]);
-      hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-
-      const codeReader = new ZXing.BrowserMultiFormatReader(hints);
-
-      async function iosContinuousLoop() {
-        if (!isCooldown && video.readyState >= 2) {
-          try {
-            // فحص الإطار الحالي بانتظام
-            const result = await codeReader.decodeFromVideoElement(video);
-            if (result && result.getText()) {
-              registerId(result.getText());
-              isCooldown = true;
-              setTimeout(() => { isCooldown = false; }, 1200);
-            }
-          } catch (err) {
-            // التجاهل الطبيعي عند عدم وجود باركود في الكادر أثناء الحركة
-          }
-        }
-        // تكرار الفحص كل 100 مللي ثانية (10 مرات بالثانية)
-        setTimeout(iosContinuousLoop, 100);
+    Quagga.onDetected(function(result) {
+      if (!isCooldown && result && result.codeResult && result.codeResult.code) {
+        registerId(result.codeResult.code);
+        isCooldown = true;
+        setTimeout(() => { isCooldown = false; }, 1200);
       }
-
-      iosContinuousLoop();
-
-    } catch (err) {
-      document.querySelector(".viewport").innerHTML = 
-        `<div style="color:#ef4444; padding:40px; font-weight:bold;">يرجى تفعيل صلاحية الكاميرا لتيليجرام من إعدادات الجوال.</div>`;
-    }
+    });
   }
 
   function submitAttendance() {
@@ -260,7 +280,7 @@
     tg.close();
   }
 
-  window.onload = startScanner;
+  window.onload = initAttendanceScanner;
 </script>
 
 </body>
