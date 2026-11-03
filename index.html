@@ -3,128 +3,217 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>تحضير الطلاب</title>
+  <title>ماسح الحضور الأكاديمي</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
-    body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #fff; margin: 0; padding: 12px; text-align: center; }
-    h3 { margin: 6px 0; color: #38bdf8; font-size: 18px; }
-    #reader { width: 100%; min-height: 250px; border-radius: 12px; overflow: hidden; background: #000; margin-bottom: 10px; border: 2px solid #334155; }
-    .counter-box { background: #1e293b; padding: 10px; border-radius: 8px; font-size: 16px; margin-bottom: 10px; font-weight: bold; border: 1px solid #475569; }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: #f0f2f5; padding: 10px; text-align: center; }
+    .container { max-width: 480px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 14px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }
+    
+    #reader { width: 100%; border-radius: 12px; overflow: hidden; background: #000; margin-bottom: 10px; }
+    
+    #toast {
+      display: none; position: fixed; top: 15px; left: 50%; transform: translateX(-50%);
+      background: #2e7d32; color: #fff; padding: 10px 20px; border-radius: 30px;
+      font-weight: bold; font-size: 1rem; z-index: 9999; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+
     .manual-box { display: flex; gap: 8px; margin-bottom: 12px; }
-    .manual-box input { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #475569; background: #1e293b; color: #fff; font-size: 15px; text-align: center; }
-    .manual-box button { background: #0284c7; border: none; color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: bold; cursor: pointer; }
-    #submit-btn { background: #22c55e; border: none; color: #fff; width: 100%; padding: 14px; font-size: 17px; font-weight: bold; border-radius: 10px; cursor: pointer; }
-    #status-msg { font-size: 13px; height: 20px; margin-bottom: 6px; }
+    input[type="text"] {
+      flex: 1; padding: 10px 12px; border: 1.5px solid #dcdfe6; border-radius: 8px;
+      font-size: 1rem; text-align: center; outline: none;
+    }
+    input[type="text"]:focus { border-color: #1f4e79; }
+    .btn-add {
+      background: #1f4e79; color: #fff; border: none; padding: 0 16px;
+      border-radius: 8px; font-weight: bold; cursor: pointer;
+    }
+    
+    .counter { font-size: 1.05rem; font-weight: bold; color: #1f4e79; margin-bottom: 8px; }
+    .list-box {
+      max-height: 130px; overflow-y: auto; background: #fafafa;
+      border: 1px solid #ebeef5; border-radius: 8px; padding: 6px; margin-bottom: 12px;
+      text-align: right;
+    }
+    .student-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 10px; border-bottom: 1px solid #f0f0f0; font-size: 0.9rem;
+    }
+    .del-btn { color: #d32f2f; cursor: pointer; font-weight: bold; padding: 0 6px; }
+    
+    .btn-submit {
+      width: 100%; padding: 14px; background: #2e7d32; color: #fff;
+      border: none; border-radius: 10px; font-size: 1.1rem; font-weight: bold;
+      cursor: pointer; transition: 0.2s;
+    }
+    .btn-submit:disabled { background: #b0bec5; cursor: not-allowed; }
   </style>
 </head>
 <body>
 
-  <h3>📷 ماسح حضور الطلاب السريع</h3>
-  <div id="status-msg">جارٍ تهيئة الكاميرا...</div>
+<div id="toast">✅ تم تسجيل: <span id="toastId"></span></div>
+
+<div class="container">
+  <h3 style="color: #1f4e79; margin-bottom: 8px;">📷 وجّه الكاميرا للبطاقة (مسح تلقائي)</h3>
   
   <div id="reader"></div>
 
-  <div class="counter-box">
-    عدد المحضرين: <span id="count" style="color:#22c55e;">0</span> طالب
-  </div>
-
+  <!-- خانة الإدخال اليدوي -->
   <div class="manual-box">
-    <input type="number" id="manual-id" placeholder="طالب نسي بطاقته؟ اكتب الرقم هنا">
-    <button onclick="addManual()">➕ إضافة</button>
+    <input type="text" id="manualInput" placeholder="أدخل الرقم الأكاديمي يدوياً..." inputmode="numeric">
+    <button class="btn-add" onclick="addManualStudent()">➕ إضافة</button>
   </div>
 
-  <button id="submit-btn" onclick="finishAndSubmit()">✅ إنهاء واعتماد الحضور</button>
+  <div class="counter">إجمالي المحضرين: <span id="count">0</span></div>
 
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+  <div class="list-box" id="studentsList">
+    <div style="color: #909399; text-align: center; padding: 8px;">لم يتم تسجيل أي طالب بعد</div>
+  </div>
 
-  <script>
-    const tg = window.Telegram ? window.Telegram.WebApp : null;
-    if (tg) tg.expand();
+  <!-- زر الاعتماد: يعمل مباشرة سواء كان التحضير بالكاميرا أو يدوي -->
+  <button id="submitBtn" class="btn-submit" onclick="submitAttendance()" disabled>✅ إنهاء واعتماد الحضور</button>
+</div>
 
-    const scannedStudents = new Set();
-    let audioCtx;
+<script>
+  const tg = window.Telegram.WebApp;
+  tg.ready();
+  tg.expand();
+
+  let attendedStudents = new Set();
+  let isCooldown = false;
+  let html5QrcodeScanner;
+
+  // توليد صوت تنبيه خفيف عند نجاح المسح
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  function playBeep() {
     try {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    } catch(e) {}
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.type = "sine";
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.12);
+    } catch (e) {}
+  }
 
-    function playBeep() {
-      if (!audioCtx) return;
-      try {
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.frequency.value = 950;
-        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-        osc.start();
-        osc.stop(audioCtx.currentTime + 0.08);
-        if (navigator.vibrate) navigator.vibrate(80);
-      } catch (e) {}
-    }
+  function showToast(id) {
+    const t = document.getElementById("toast");
+    document.getElementById("toastId").innerText = id;
+    t.style.display = "block";
+    setTimeout(() => { t.style.display = "none"; }, 1500);
+  }
 
-    function recordStudent(academicId, type) {
-      if (!academicId || academicId.length < 4) return;
-      
-      if (scannedStudents.has(academicId)) {
-        document.getElementById("status-msg").innerHTML = `<span style="color:#ef4444;">⚠️ الرقم (${academicId}) مسجل مسبقاً!</span>`;
-        return;
-      }
+  function updateUI() {
+    const listEl = document.getElementById("studentsList");
+    const countEl = document.getElementById("count");
+    const submitBtn = document.getElementById("submitBtn");
 
-      scannedStudents.add(academicId);
-      playBeep();
-      document.getElementById("count").innerText = scannedStudents.size;
-      document.getElementById("status-msg").innerHTML = `<span style="color:#22c55e;">✅ تم تسجيل: ${academicId} (${type})</span>`;
-    }
+    countEl.innerText = attendedStudents.size;
 
-    function addManual() {
-      const input = document.getElementById("manual-id");
-      const val = input.value.trim();
-      if (val) {
-        recordStudent(val, "يدوي");
-        input.value = "";
-      }
-    }
-
-    function startCamera() {
-      if (typeof Html5Qrcode === "undefined") {
-        document.getElementById("status-msg").innerText = "تعذر تحميل مكتبة الكاميرا، تحقق من الاتصال.";
-        return;
-      }
-      const html5QrCode = new Html5Qrcode("reader");
-      html5QrCode.start(
-        { facingMode: "environment" },
-        {
-          fps: 20,
-          qrbox: { width: 280, height: 130 },
-          formatsToSupport: [
-            Html5QrcodeSupportedFormats.CODE_128,
-            Html5QrcodeSupportedFormats.CODE_39,
-            Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.QR_CODE
-          ]
-        },
-        (decodedText) => { recordStudent(decodedText, "باركود"); },
-        (errorMessage) => {}
-      ).then(() => {
-        document.getElementById("status-msg").innerText = "وجه الكاميرا نحو باركود البطاقة أو الجوال";
-      }).catch(err => {
-        document.getElementById("status-msg").innerText = "يرجى السماح بصلاحية الكاميرا في المتصفح.";
+    if (attendedStudents.size === 0) {
+      listEl.innerHTML = `<div style="color: #909399; text-align: center; padding: 8px;">لم يتم تسجيل أي طالب بعد</div>`;
+      submitBtn.disabled = true;
+    } else {
+      listEl.innerHTML = "";
+      attendedStudents.forEach(id => {
+        const item = document.createElement("div");
+        item.className = "student-item";
+        item.innerHTML = `<span>🎓 الرقم: <b>${id}</b></span><span class="del-btn" onclick="removeStudent('${id}')">❌</span>`;
+        listEl.appendChild(item);
       });
+      submitBtn.disabled = false; // تفعيل زر الاعتماد فوراً
+    }
+  }
+
+  function registerId(id) {
+    const cleanId = String(id).trim();
+    if (!cleanId) return;
+
+    if (attendedStudents.has(cleanId)) {
+      if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("warning");
+      return;
     }
 
-    window.onload = startCamera;
+    attendedStudents.add(cleanId);
+    playBeep();
+    if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
+    showToast(cleanId);
+    updateUI();
+  }
 
-    function finishAndSubmit() {
-      if (scannedStudents.size === 0) {
-        alert("لم يتم مسح أي طالب بعد!");
-        return;
-      }
-      if (tg) {
-        tg.sendData(JSON.stringify(Array.from(scannedStudents)));
-      } else {
-        alert("تم تحضير الطلاب: " + Array.from(scannedStudents).join(", "));
-      }
+  function addManualStudent() {
+    const input = document.getElementById("manualInput");
+    const val = input.value.trim();
+    if (val) {
+      registerId(val);
+      input.value = "";
     }
-  </script>
+    input.focus();
+  }
+
+  document.getElementById("manualInput").addEventListener("keypress", function(e) {
+    if (e.key === "Enter") addManualStudent();
+  });
+
+  function removeStudent(id) {
+    attendedStudents.delete(id);
+    updateUI();
+  }
+
+  function onScanSuccess(decodedText) {
+    if (isCooldown) return;
+
+    const match = decodedText.match(/\d{4,12}/);
+    const studentId = match ? match[0] : decodedText.trim();
+
+    registerId(studentId);
+
+    // مهلة ثانية واحدة لمنع تكرار نفس البطاقة دون إيقاف الكاميرا
+    isCooldown = true;
+    setTimeout(() => { isCooldown = false; }, 1000);
+  }
+
+  function startScanner() {
+    // دعم كافة أنواع الباركود الخطي للبطائق الجامعية
+    const formatsToSupport = [
+      Html5QrcodeSupportedFormats.QR_CODE,
+      Html5QrcodeSupportedFormats.CODE_128,
+      Html5QrcodeSupportedFormats.CODE_39,
+      Html5QrcodeSupportedFormats.EAN_13,
+      Html5QrcodeSupportedFormats.UPC_A
+    ];
+
+    html5QrcodeScanner = new Html5Qrcode("reader", { formatsToSupport: formatsToSupport });
+    
+    // إطار مستطيل مناسب لباركود البطائق
+    const config = {
+      fps: 20,
+      qrbox: { width: 280, height: 160 },
+      experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+    };
+
+    html5QrcodeScanner.start(
+      { facingMode: "environment" },
+      config,
+      onScanSuccess,
+      (err) => {}
+    ).catch(err => {
+      document.getElementById("reader").innerHTML = `<div style="color:red; padding:20px;">تعذر فتح الكاميرا: يرجى تفعيل إذن الكاميرا.</div>`;
+    });
+  }
+
+  function submitAttendance() {
+    if (attendedStudents.size === 0) return;
+    const dataToSend = JSON.stringify({ ids: Array.from(attendedStudents) });
+    tg.sendData(dataToSend);
+  }
+
+  window.onload = startScanner;
+</script>
+
 </body>
 </html>
