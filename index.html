@@ -3,107 +3,97 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>ماسح الحضور الذكي</title>
+  <title>ماسح الحضور المباشر</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { background-color: #f4f6f9; padding: 10px; text-align: center; }
-    .container { max-width: 460px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 14px; box-shadow: 0 4px 15px rgba(0,0,0,0.06); }
+    body { background-color: #0f172a; padding: 8px; text-align: center; color: #fff; }
+    .container { max-width: 480px; margin: 0 auto; background: #1e293b; border-radius: 14px; padding: 12px; }
     
-    .video-wrapper {
-      position: relative; width: 100%; border-radius: 12px; overflow: hidden;
-      background: #000; margin-bottom: 10px; height: 240px;
+    /* نافذة الكاميرا الحية */
+    .viewport {
+      position: relative; width: 100%; height: 260px; border-radius: 12px;
+      overflow: hidden; background: #000; margin-bottom: 10px;
     }
     video { width: 100%; height: 100%; object-fit: cover; }
     
-    .scan-guide {
+    /* إطار الليزر الأفقي الخاص بباركود البطائق */
+    .scan-box {
       position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-      width: 90%; height: 50%; border: 2px solid #00e676;
-      border-radius: 8px; box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.4); pointer-events: none;
+      width: 90%; height: 45%; border: 2.5px solid #22c55e; border-radius: 10px;
+      box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.45); pointer-events: none;
     }
     .laser {
-      position: absolute; width: 100%; height: 2px; background: #00e676;
-      box-shadow: 0 0 8px #00e676; animation: scanAnim 2s infinite ease-in-out;
+      position: absolute; width: 100%; height: 3px; background: #22c55e;
+      box-shadow: 0 0 10px #22c55e; animation: scan 1.8s infinite ease-in-out;
     }
-    @keyframes scanAnim {
+    @keyframes scan {
       0% { top: 10%; opacity: 0.3; } 50% { top: 90%; opacity: 1; } 100% { top: 10%; opacity: 0.3; }
     }
 
-    /* زر التقاط صورة بدقة عالية للبطاقة */
-    .btn-capture {
-      width: 100%; padding: 12px; background: #0288d1; color: #fff; border: none;
-      border-radius: 9px; font-size: 1rem; font-weight: bold; cursor: pointer;
-      margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 8px;
+    #toast {
+      display: none; padding: 10px; border-radius: 8px; margin-bottom: 10px;
+      font-weight: bold; font-size: 1rem; background: #22c55e; color: #000;
     }
 
-    #status-alert {
-      display: none; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-weight: bold; font-size: 0.95rem;
-      background: #d4edda; color: #155724; border: 1px solid #c3e6cb;
-    }
-
-    .manual-box { display: flex; gap: 8px; margin-bottom: 12px; }
+    .manual-box { display: flex; gap: 8px; margin-bottom: 10px; }
     input[type="text"] {
-      flex: 1; padding: 11px; border: 1.5px solid #dcdfe6; border-radius: 8px;
-      font-size: 1rem; text-align: center; outline: none;
+      flex: 1; padding: 10px; border: 1.5px solid #475569; border-radius: 8px;
+      font-size: 1rem; text-align: center; outline: none; background: #0f172a; color: #fff;
     }
-    input[type="text"]:focus { border-color: #1f4e79; }
     .btn-add {
-      background: #1f4e79; color: #fff; border: none; padding: 0 16px;
+      background: #3b82f6; color: #fff; border: none; padding: 0 16px;
       border-radius: 8px; font-weight: bold; cursor: pointer;
     }
     
-    .counter { font-size: 1.1rem; font-weight: bold; color: #1f4e79; margin-bottom: 8px; }
+    .counter { font-size: 1.05rem; font-weight: bold; color: #38bdf8; margin-bottom: 8px; }
     .list-box {
-      max-height: 120px; overflow-y: auto; background: #fafafa;
-      border: 1px solid #ebeef5; border-radius: 8px; padding: 6px; margin-bottom: 12px;
+      max-height: 120px; overflow-y: auto; background: #0f172a;
+      border: 1px solid #334155; border-radius: 8px; padding: 6px; margin-bottom: 12px;
       text-align: right;
     }
     .student-item {
       display: flex; justify-content: space-between; align-items: center;
-      padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 0.95rem;
+      padding: 6px 10px; border-bottom: 1px solid #1e293b; font-size: 0.95rem;
     }
-    .del-btn { color: #d32f2f; cursor: pointer; font-weight: bold; padding: 0 5px; }
+    .del-btn { color: #ef4444; cursor: pointer; font-weight: bold; padding: 0 5px; }
     
     .btn-submit {
-      width: 100%; padding: 14px; background: #2e7d32; color: #fff;
+      width: 100%; padding: 14px; background: #22c55e; color: #000;
       border: none; border-radius: 10px; font-size: 1.1rem; font-weight: bold;
       cursor: pointer;
     }
-    .btn-submit:disabled { background: #b0bec5; cursor: not-allowed; }
+    .btn-submit:disabled { background: #64748b; color: #94a3b8; cursor: not-allowed; }
   </style>
 </head>
 <body>
 
 <div class="container">
-  <div id="status-alert"></div>
+  <div id="toast"></div>
 
   <!-- الكاميرا المباشرة -->
-  <div class="video-wrapper">
+  <div class="viewport">
     <video id="video" playsinline webkit-playsinline muted autoplay></video>
-    <div class="scan-guide"><div class="laser"></div></div>
+    <div class="scan-box"><div class="laser"></div></div>
   </div>
 
-  <!-- خيار التصوير المباشر فائق الوضوح للبطاقات الصعبة -->
-  <input type="file" id="fileInput" accept="image/*" capture="environment" style="display: none;" onchange="handleImageCapture(this)">
-  <button class="btn-capture" onclick="document.getElementById('fileInput').click()">
-    📸 تصوير البطاقة مباشرة (إذا تعذر المسح التلقائي)
-  </button>
-
-  <!-- الإدخال اليدوي -->
+  <!-- خانة يدوية مساعدة عند الحاجة -->
   <div class="manual-box">
     <input type="text" id="manualInput" placeholder="أدخل الرقم الأكاديمي يدوياً..." inputmode="numeric">
     <button class="btn-add" onclick="addManualStudent()">➕ إضافة</button>
   </div>
 
-  <div class="counter">إجمالي الحاضرين: <span id="count">0</span></div>
+  <div class="counter">الحاضرين: <span id="count">0</span></div>
 
   <div class="list-box" id="studentsList">
-    <div style="color: #909399; text-align: center; padding: 8px;">لم يُسجل أي طالب بعد</div>
+    <div style="color: #64748b; text-align: center; padding: 8px;">وجّه الكاميرا نحو باركود البطاقة مباشرة</div>
   </div>
 
   <button id="submitBtn" class="btn-submit" onclick="submitAttendance()" disabled>✅ إنهاء واعتماد الحضور</button>
 </div>
+
+<canvas id="cropCanvas" style="display:none;"></canvas>
 
 <script>
   const tg = window.Telegram.WebApp;
@@ -112,13 +102,29 @@
 
   let attendedStudents = new Set();
   let isCooldown = false;
-  let codeReader = null;
+  let audioCtx = null;
 
-  function showAlert(msg) {
-    const el = document.getElementById("status-alert");
+  // توليد صوت بيب تنبيهي فوري
+  function playBeep() {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.type = "sine";
+      osc.frequency.value = 1050;
+      gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.1);
+    } catch(e){}
+  }
+
+  function showToast(msg) {
+    const el = document.getElementById("toast");
     el.innerText = msg;
     el.style.display = "block";
-    setTimeout(() => { el.style.display = "none"; }, 1800);
+    setTimeout(() => { el.style.display = "none"; }, 1500);
   }
 
   function updateUI() {
@@ -129,14 +135,14 @@
     countEl.innerText = attendedStudents.size;
 
     if (attendedStudents.size === 0) {
-      listEl.innerHTML = `<div style="color: #909399; text-align: center; padding: 8px;">لم يُسجل أي طالب بعد</div>`;
+      listEl.innerHTML = `<div style="color: #64748b; text-align: center; padding: 8px;">وجّه الكاميرا نحو باركود البطاقة مباشرة</div>`;
       submitBtn.disabled = true;
     } else {
       listEl.innerHTML = "";
       attendedStudents.forEach(id => {
         const item = document.createElement("div");
         item.className = "student-item";
-        item.innerHTML = `<span>🎓 الرقم: <b>${id}</b></span><span class="del-btn" onclick="removeStudent('${id}')">❌</span>`;
+        item.innerHTML = `<span>🎓 <b>${id}</b></span><span class="del-btn" onclick="removeStudent('${id}')">❌</span>`;
         listEl.appendChild(item);
       });
       submitBtn.disabled = false;
@@ -156,8 +162,9 @@
     }
 
     attendedStudents.add(cleanId);
+    playBeep();
     if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
-    showAlert(`✅ تم تسجيل: ${cleanId}`);
+    showToast(`✅ تم تحضير: ${cleanId}`);
     updateUI();
   }
 
@@ -171,7 +178,7 @@
     input.focus();
   }
 
-  document.getElementById("manualInput").addEventListener("keypress", function(e) {
+  document.getElementById("manualInput").addEventListener("keypress", (e) => {
     if (e.key === "Enter") addManualStudent();
   });
 
@@ -180,58 +187,81 @@
     updateUI();
   }
 
-  // 1. المسح الحي من الكاميرا
-  async function startScanner() {
+  // المحرك الحي المزدوج
+  async function startLiveScanning() {
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("cropCanvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
     try {
+      // إعدادات مرنة تضمن فتح الكاميرا في جميع أجهزة الآيفون والأندرويد
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false
+      });
+      video.srcObject = stream;
+      await video.play();
+
+      // المحرك الأول: BarcodeDetector للأندرويد (فائق السرعة)
+      if ('BarcodeDetector' in window) {
+        const detector = new BarcodeDetector({
+          formats: ['code_128', 'code_39', 'ean_13', 'qr_code']
+        });
+
+        async function nativeLoop() {
+          if (!isCooldown && video.readyState >= 2) {
+            try {
+              const barcodes = await detector.detect(video);
+              if (barcodes.length > 0) {
+                registerId(barcodes[0].rawValue);
+                isCooldown = true;
+                setTimeout(() => { isCooldown = false; }, 1200);
+              }
+            } catch(e){}
+          }
+          requestAnimationFrame(nativeLoop);
+        }
+        nativeLoop();
+        return;
+      }
+
+      // المحرك الثاني: تقطيع شريط المسح لـ ZXing (مخصص للآيفون)
       const hints = new Map();
       hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
         ZXing.BarcodeFormat.CODE_128,
         ZXing.BarcodeFormat.CODE_39,
-        ZXing.BarcodeFormat.EAN_13,
-        ZXing.BarcodeFormat.QR_CODE
+        ZXing.BarcodeFormat.EAN_13
       ]);
       hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+      const zxingReader = new ZXing.BrowserMultiFormatReader(hints);
 
-      codeReader = new ZXing.BrowserMultiFormatReader(hints);
+      async function iosLoop() {
+        if (!isCooldown && video.readyState >= 2) {
+          const vw = video.videoWidth;
+          const vh = video.videoHeight;
+          if (vw && vh) {
+            // التركيز فقط على منتصف الكاميرا مكان الباركود الخطي
+            canvas.width = 640;
+            canvas.height = 240;
+            ctx.drawImage(video, vw * 0.1, vh * 0.35, vw * 0.8, vh * 0.3, 0, 0, canvas.width, canvas.height);
 
-      await codeReader.decodeFromConstraints(
-        {
-          audio: false,
-          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } }
-        },
-        'video',
-        (result, err) => {
-          if (result && !isCooldown) {
-            registerId(result.getText());
-            isCooldown = true;
-            setTimeout(() => { isCooldown = false; }, 1200);
+            try {
+              const result = await zxingReader.decodeFromCanvas(canvas);
+              if (result && result.getText()) {
+                registerId(result.getText());
+                isCooldown = true;
+                setTimeout(() => { isCooldown = false; }, 1200);
+              }
+            } catch(e){}
           }
         }
-      );
+        setTimeout(iosLoop, 80); // فحص 12 مرة بالثانية
+      }
+      iosLoop();
+
     } catch (err) {
-      console.error(err);
-    }
-  }
-
-  // 2. فحص الصورة عالية الدقة (الحل المضمون 100% للبطاقات)
-  async function handleImageCapture(input) {
-    if (input.files && input.files[0]) {
-      const file = input.files[0];
-      const img = new Image();
-      img.src = URL.createObjectURL(file);
-      img.onload = async () => {
-        try {
-          if (!codeReader) {
-            codeReader = new ZXing.BrowserMultiFormatReader();
-          }
-          const result = await codeReader.decodeFromImageElement(img);
-          if (result) {
-            registerId(result.getText());
-          }
-        } catch (e) {
-          alert("تعذر قراءة الباركود من الصورة، تأكد من وضوح خطوط البطاقة وإضاءة المكان.");
-        }
-      };
+      document.querySelector(".viewport").innerHTML = 
+        `<div style="color:#ef4444; padding:40px; font-weight:bold;">يرجى منح تطبيق تيليجرام إذن الكاميرا من إعدادات الجوال.</div>`;
     }
   }
 
@@ -242,7 +272,7 @@
     tg.close();
   }
 
-  window.onload = startScanner;
+  window.onload = startLiveScanning;
 </script>
 
 </body>
