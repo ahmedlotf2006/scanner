@@ -11,12 +11,12 @@
     body { background-color: #f4f6f8; padding: 12px; text-align: center; }
     .container { max-width: 450px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 14px; box-shadow: 0 4px 15px rgba(0,0,0,0.06); }
     
-    #reader { width: 100%; border-radius: 10px; overflow: hidden; background: #000; margin-bottom: 12px; }
+    #reader { width: 100%; border-radius: 10px; overflow: hidden; background: #000; margin-bottom: 12px; min-height: 240px; }
     
     #status-alert {
       display: none; padding: 10px; border-radius: 8px; margin-bottom: 10px; font-weight: bold; font-size: 0.95rem;
+      background: #d4edda; color: #155724; border: 1px solid #c3e6cb;
     }
-    .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
 
     .manual-box { display: flex; gap: 8px; margin-bottom: 12px; }
     input[type="text"] {
@@ -82,9 +82,8 @@
   function showAlert(msg) {
     const el = document.getElementById("status-alert");
     el.innerText = msg;
-    el.className = "alert-success";
     el.style.display = "block";
-    setTimeout(() => { el.style.display = "none"; }, 2000);
+    setTimeout(() => { el.style.display = "none"; }, 1800);
   }
 
   function updateUI() {
@@ -146,7 +145,6 @@
   function onScanSuccess(decodedText) {
     if (isCooldown) return;
 
-    // استخراج الرقم المكون من 4 خانات فأكثر
     const match = decodedText.match(/\d{4,12}/);
     const sid = match ? match[0] : decodedText.trim();
 
@@ -157,32 +155,45 @@
   }
 
   function startCamera() {
-    html5Qr = new Html5Qrcode("reader");
+    // تفعيل قراءة الباركود الخطي للبطائق الجامعية
+    const formatsToSupport = [
+      Html5QrcodeSupportedFormats.CODE_128,
+      Html5QrcodeSupportedFormats.CODE_39,
+      Html5QrcodeSupportedFormats.CODE_93,
+      Html5QrcodeSupportedFormats.EAN_13,
+      Html5QrcodeSupportedFormats.EAN_8,
+      Html5QrcodeSupportedFormats.UPC_A,
+      Html5QrcodeSupportedFormats.UPC_E,
+      Html5QrcodeSupportedFormats.QR_CODE
+    ];
 
-    // إعدادات الكاميرا بدقة HD والتركيز التلقائي لباركود البطائق الخطي
-    const cameraConfig = {
-      fps: 20,
-      qrbox: { width: 300, height: 180 },
-      aspectRatio: 1.333334
+    html5Qr = new Html5Qrcode("reader", {
+      formatsToSupport: formatsToSupport,
+      verbose: false,
+      experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+    });
+
+    // إطار عريض يناسب خطوط الباركود الأفقية بالكامل
+    const qrboxFunction = function(viewfinderWidth, viewfinderHeight) {
+      return {
+        width: Math.floor(viewfinderWidth * 0.90),
+        height: Math.floor(viewfinderHeight * 0.45)
+      };
     };
 
     html5Qr.start(
       { facingMode: "environment" },
-      cameraConfig,
+      { fps: 25, qrbox: qrboxFunction },
       onScanSuccess,
       (err) => {}
     ).catch(err => {
-      document.getElementById("reader").innerHTML = `<div style="color:red; padding:15px;">يرجى السماح بصلاحية الكاميرا في تيليجرام.</div>`;
+      document.getElementById("reader").innerHTML = `<div style="color:red; padding:15px;">يرجى تفعيل صلاحية الكاميرا.</div>`;
     });
   }
 
   function submitAttendance() {
     if (attendedStudents.size === 0) return;
-
-    // تجهيز البيانات وإرسالها لتيليجرام
     const data = JSON.stringify({ ids: Array.from(attendedStudents) });
-    
-    // إرسال البيانات وإغلاق شاشة الويب
     tg.sendData(data);
     tg.close();
   }
