@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>ماسح الحضور الذكي</title>
+  <title>ماسح الحضور الأكاديمي</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <!-- محرك Quagga2 المخصص لباركود البطائق على أجهزة الآيفون -->
-  <script src="https://unpkg.com/@ericblade/quagga2@1.8.4/dist/quagga.min.js"></script>
+  <!-- مكتبة ZXing المعتمدة والمستقرة -->
+  <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { background-color: #0f172a; padding: 10px; text-align: center; color: #fff; }
@@ -16,15 +16,12 @@
       position: relative; width: 100%; height: 260px; border-radius: 12px;
       overflow: hidden; background: #000; margin-bottom: 12px;
     }
-    .viewport video, .viewport canvas {
-      width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0;
-    }
-    .viewport canvas.drawingBuffer { display: none !important; }
+    video { width: 100%; height: 100%; object-fit: cover; }
     
     .scan-guide {
       position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
       width: 90%; height: 45%; border: 2.5px solid #22c55e; border-radius: 10px;
-      box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.45); pointer-events: none; z-index: 2;
+      box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.45); pointer-events: none;
     }
     .laser {
       position: absolute; width: 100%; height: 2.5px; background: #22c55e;
@@ -74,8 +71,9 @@
 <div class="container">
   <div id="toast"></div>
 
+  <!-- شاشة الكاميرا الموحدة -->
   <div class="viewport">
-    <video id="androidVideo" playsinline webkit-playsinline muted autoplay></video>
+    <video id="video" playsinline webkit-playsinline muted autoplay></video>
     <div class="scan-guide"><div class="laser"></div></div>
   </div>
 
@@ -87,11 +85,14 @@
   <div class="counter">إجمالي الحاضرين: <span id="count">0</span></div>
 
   <div class="list-box" id="studentsList">
-    <div style="color: #64748b; text-align: center; padding: 8px;">وجّه الكاميرا نحو باركود البطاقة (مسافة شبر)</div>
+    <div style="color: #64748b; text-align: center; padding: 8px;">ضع باركود البطاقة داخل المستطيل الأخضر</div>
   </div>
 
   <button id="submitBtn" class="btn-submit" onclick="submitAttendance()" disabled>✅ إنهاء واعتماد الحضور</button>
 </div>
+
+<!-- كانفاس داخلي لاقتطاع منطقة الباركود في أجهزة الآيفون -->
+<canvas id="cropCanvas" style="display:none;"></canvas>
 
 <script>
   const tg = window.Telegram.WebApp;
@@ -132,7 +133,7 @@
     countEl.innerText = attendedStudents.size;
 
     if (attendedStudents.size === 0) {
-      listEl.innerHTML = `<div style="color: #64748b; text-align: center; padding: 8px;">وجّه الكاميرا نحو باركود البطاقة (مسافة شبر)</div>`;
+      listEl.innerHTML = `<div style="color: #64748b; text-align: center; padding: 8px;">ضع باركود البطاقة داخل المستطيل الأخضر</div>`;
       submitBtn.disabled = true;
     } else {
       listEl.innerHTML = "";
@@ -184,21 +185,22 @@
     updateUI();
   }
 
-  // ==========================================
-  // تشغيل المحرك المزدوج (Android + iPhone)
-  // ==========================================
-  async function initAttendanceScanner() {
-    // 1. نظام أندرويد (المحرك العتادي الشغال حالياً بدون أي تغيير)
-    if ('BarcodeDetector' in window) {
-      const video = document.getElementById("androidVideo");
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-          audio: false
-        });
-        video.srcObject = stream;
-        await video.play();
+  async function startAttendanceScanner() {
+    const video = document.getElementById("video");
+    video.muted = true;
+    video.setAttribute('playsinline', 'true');
+    video.setAttribute('webkit-playsinline', 'true');
 
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false
+      });
+      video.srcObject = stream;
+      await video.play();
+
+      // 1. نظام أندرويد: المحرك العتادي المباشر فائق السرعة
+      if ('BarcodeDetector' in window) {
         const detector = new BarcodeDetector({
           formats: ['code_128', 'code_39', 'ean_13', 'qr_code']
         });
@@ -217,60 +219,60 @@
           requestAnimationFrame(androidLoop);
         }
         androidLoop();
-      } catch (err) {
-        document.querySelector(".viewport").innerHTML = 
-          `<div style="color:#ef4444; padding:40px; font-weight:bold;">يرجى تفعيل صلاحية الكاميرا.</div>`;
-      }
-      return;
-    }
-
-    // 2. نظام آيفون (Quagga2 المتخصص في خطوط الباركود 1D)
-    const androidVideo = document.getElementById("androidVideo");
-    if (androidVideo) androidVideo.remove(); // إزالة الفيديو الافتراضي ليعمل مشغل آيفون بدقة
-
-    if (typeof Quagga === "undefined") {
-      document.querySelector(".viewport").innerHTML = 
-        `<div style="color:#ef4444; padding:40px; font-weight:bold;">تعذر تحميل محرك المسح، تأكد من اتصال الإنترنت.</div>`;
-      return;
-    }
-
-    Quagga.init({
-      inputStream: {
-        name: "Live",
-        type: "LiveStream",
-        target: document.querySelector('.viewport'),
-        constraints: {
-          facingMode: "environment"
-        }
-      },
-      numOfWorkers: 0, // تشغيل متزامن لمنع الحظر الأمني في Safari
-      locate: true,
-      locator: {
-        patchSize: "medium",
-        halfSample: true
-      },
-      decoder: {
-        readers: [
-          "code_128_reader",
-          "code_39_reader"
-        ]
-      }
-    }, function(err) {
-      if (err) {
-        document.querySelector(".viewport").innerHTML = 
-          `<div style="color:#ef4444; padding:40px; font-weight:bold;">يرجى منح إذن الكاميرا لتطبيق تيليجرام في إعدادات الآيفون.</div>`;
         return;
       }
-      Quagga.start();
-    });
 
-    Quagga.onDetected(function(result) {
-      if (!isCooldown && result && result.codeResult && result.codeResult.code) {
-        registerId(result.codeResult.code);
-        isCooldown = true;
-        setTimeout(() => { isCooldown = false; }, 1200);
+      // 2. نظام آيفون (iOS Safari): اقتطاع المستطيل الأخضر وفحصه بـ ZXing
+      const canvas = document.getElementById("cropCanvas");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      
+      const hints = new Map();
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+        ZXing.BarcodeFormat.CODE_128,
+        ZXing.BarcodeFormat.CODE_39
+      ]);
+      hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+
+      const zxingReader = new ZXing.MultiFormatReader();
+      zxingReader.setHints(hints);
+
+      async function iosLoop() {
+        if (!isCooldown && video.readyState >= 2) {
+          const vw = video.videoWidth;
+          const vh = video.videoHeight;
+
+          if (vw && vh) {
+            // اقتطاع منطقة الليزر الخضراء بدقة (80% عرض، 30% ارتفاع)
+            canvas.width = 480;
+            canvas.height = 180;
+            ctx.drawImage(video, vw * 0.1, vh * 0.35, vw * 0.8, vh * 0.3, 0, 0, canvas.width, canvas.height);
+
+            try {
+              const lum = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
+              const bitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
+              const result = zxingReader.decodeWithState(bitmap);
+              
+              if (result && result.getText()) {
+                registerId(result.getText());
+                isCooldown = true;
+                setTimeout(() => { isCooldown = false; }, 1200);
+              }
+            } catch (err) {
+              // خطأ طبيعي يتكرر عند عدم وجود باركود في الكادر أثناء التحريك
+            } finally {
+              zxingReader.reset(); // تفريغ الذاكرة المؤقتة لمنع التجمد
+            }
+          }
+        }
+        setTimeout(iosLoop, 75); // تكرار الفحص بمعدل 13 مرة بالثانية
       }
-    });
+
+      iosLoop();
+
+    } catch (err) {
+      document.querySelector(".viewport").innerHTML = 
+        `<div style="color:#ef4444; padding:40px; font-weight:bold;">يرجى تفعيل صلاحية الكاميرا لتيليجرام من إعدادات الجوال.</div>`;
+    }
   }
 
   function submitAttendance() {
@@ -280,7 +282,7 @@
     tg.close();
   }
 
-  window.onload = initAttendanceScanner;
+  window.onload = startAttendanceScanner;
 </script>
 
 </body>
